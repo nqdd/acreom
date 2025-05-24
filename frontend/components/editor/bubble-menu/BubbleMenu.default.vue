@@ -94,6 +94,14 @@
                 >
                     <TableDeleteIcon />
                 </button>
+                <div class="divider"></div>
+                <button
+                    class="table-button has-tippy"
+                    :data-tippy-content="`<div class='tooltip'>Copy as markdown</div>`"
+                    @click="onCopyTableAsMarkdown"
+                >
+                    <InterfaceFileClipboard size="14" class="icon" />
+                </button>
             </div>
         </div>
         <div
@@ -277,7 +285,7 @@ import {
     ChevronDownIcon,
     DotsHorizontalIcon,
 } from '@vue-hero-icons/solid';
-import { Editor } from '@tiptap/core';
+import { Editor, findParentNodeClosestToPos } from '@tiptap/core';
 import { Level } from '@tiptap/extension-heading';
 import ConvertMenu from './ConvertMenu.vue';
 import MiscMenu from './MiscMenu.vue';
@@ -312,6 +320,7 @@ import {
     TrackingActionSource,
     TrackingType,
 } from '~/@types/tracking';
+import InterfaceFileClipboard from '~/components/streamline/InterfaceFileClipboard.vue';
 
 @Component({
     components: {
@@ -346,6 +355,7 @@ import {
         StrikeIcon,
         InterfaceEditMagicWand,
         InterfaceHierarchy3,
+        InterfaceFileClipboard,
     },
     name: 'AcreomBubbleMenu',
 })
@@ -631,6 +641,133 @@ export default class AcreomBubbleMenu extends Vue {
             if (!this.$refs.linkInput) return;
             this.$refs.linkInput.setFocus();
         });
+    }
+
+    onCopyTableAsMarkdown(e: MouseEvent) {
+        try {
+            e.preventDefault();
+            e.stopPropagation();
+            const { state } = this.editor;
+            const { selection } = state;
+            const table = findParentNodeClosestToPos(
+                selection.ranges[0].$from,
+                (node: { type: { name: string } }) => {
+                    return node.type.name === 'table';
+                },
+            );
+            const markdown = this.parseTableToMarkdown(table);
+            if (!markdown) {
+                throw new Error('Parse table to markdown failed');
+            }
+            const prettyMarkdown = this.beautifyMarkdownTable(markdown);
+            return this.$utils.copyToClipboard(
+                prettyMarkdown || markdown,
+                'Copied to clipboard',
+            );
+
+        } catch (error) {
+            console.error(error);
+            this.$notification.show({
+                component: () =>
+                    import('@/components/notifications/MiscNotification.vue'),
+                bind: {
+                    displayText: 'Failed to copy table to clipboard',
+                },
+            });
+        }
+    }
+
+    parseTableToMarkdown(
+        table: ReturnType<typeof findParentNodeClosestToPos>,
+    ): string {
+        if (!table) {
+            return '';
+        }
+
+        const tableNode = JSON.parse(JSON.stringify(table.node));
+
+        if (!tableNode.content) {
+            return '';
+        }
+
+        type Row = {
+            type: string;
+            text: string;
+            content: Array<{
+                type: string;
+                text: string;
+                content: [];
+            }>;
+        };
+
+        const rows: Row[] = tableNode.content;
+
+        const extractText = (node: Row): string => {
+            if (!node) return '';
+
+            if (node.type === 'text') {
+                return node.text ?? '';
+            }
+
+            if (Array.isArray(node.content)) {
+                return node.content.map(extractText).join('').trim();
+            }
+
+            return '';
+        };
+
+        const parseRow = (row: Row) =>
+            row.content?.map(cell => extractText(cell)) ?? [];
+
+        const headerRow = parseRow(rows[0]);
+        const header = `| ${headerRow.join(' | ')} |`;
+        const separator = `| ${headerRow.map(() => '---').join(' | ')} |`;
+
+        const bodyRows = rows.slice(1).map((row) => {
+            const cells = parseRow(row);
+            return `| ${cells.join(' | ')} |`;
+        });
+
+        return [header, separator, ...bodyRows].join('\n');
+    }
+
+    beautifyMarkdownTable(markdown: string): string {
+        const lines = markdown.trim().split('\n');
+        const rows = lines.map(line =>
+            line
+                .trim()
+                .slice(1, -1) // remove leading and trailing pipes
+                .split('|')
+                .map(cell => cell.trim()),
+        );
+
+        const columnCount = Math.max(...rows.map(row => row.length));
+        const colWidths = new Array(columnCount).fill(0);
+
+        // Find max width of each column
+        for (const row of rows) {
+            row.forEach((cell, i) => {
+                colWidths[i] = Math.max(colWidths[i], cell.length);
+            });
+        }
+
+        // Pad cells
+        const formatRow = (row: string[], isSeparator = false) =>
+            '| ' +
+            row
+                .map((cell, i) => {
+                    const pad = colWidths[i] - cell.length;
+                    if (isSeparator) {
+                        return '-'.repeat(colWidths[i]);
+                    }
+                    return cell + ' '.repeat(pad);
+                })
+                .join(' | ') +
+            ' |';
+
+        return rows
+            .map((row, i) => formatRow(row, i === 1)) // second row is the separator
+            .join('\n');
     }
 }
 </script>
