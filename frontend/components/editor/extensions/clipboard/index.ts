@@ -1,17 +1,14 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { DOMSerializer, Fragment, Node, Slice } from '@tiptap/pm/model';
-import {
-    getMarkSerializers,
-    getNodeSerializers,
-    registerEditorExtension,
-} from '~/components/editor/extensions';
+import { Fragment, Node, Slice } from '@tiptap/pm/model';
+import { registerEditorExtension } from '~/components/editor/extensions';
 import { EditorTypes } from '~/constants';
 import { EditorContext } from '~/@types/app';
+import './table';
 
 registerEditorExtension({
     type: EditorTypes.BASIC,
-    createInstance(ctx: EditorContext) {
+    createInstance(_: EditorContext) {
         return Extension.create({
             name: 'empty-line-paste-handler',
             addProseMirrorPlugins() {
